@@ -26,6 +26,21 @@ their done criteria (B0–B4) stay only in `docs/KICKOFF.md` §5.
   to `main`. A push to `main` deploys to production (Vercel for this repo), so typecheck, lint, test and
   build pass before every push.
 
+## Local server: always through Runbar
+
+This repo's dev server is the Runbar service `basecast-app` (a menu bar app; config in `~/.config/runbar/config.json`).
+Start it, stop it and read its output only through the `runbar` command, never with `npm run dev` (or `next dev`) straight in a
+terminal: the process would run outside Runbar, with no output in the app and fighting it for the port. The same
+goes for the sibling repos' services; builds, tests and scripts still run directly.
+
+- `runbar status`: what is up and on which port. If the service is already running, use it.
+- `runbar start basecast-app --wait`: starts it and waits for the port (opens Runbar if it is closed). The configured port
+  is `:3011`; if it is taken, Runbar starts on the next free one, and the port that counts is the one the command
+  and `runbar status` print.
+- `runbar logs basecast-app -n 100` (`-f` to follow), `runbar restart basecast-app --wait`, `runbar stop basecast-app`.
+- A server that isn't in the config yet goes into `~/.config/runbar/config.json` (format in
+  `~/.config/runbar/README.md`), checked with `runbar validate`.
+
 ## Product context (KICKOFF §1)
 
 Base Power is an Austin energy company. It installs batteries in homes (and keeps owning them), sells
