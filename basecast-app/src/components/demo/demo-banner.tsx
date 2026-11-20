@@ -6,8 +6,8 @@ import { useState } from "react";
 import { DEMO_BANNER_COOKIE, HACKATHON } from "@/lib/demo";
 
 /**
- * Above every screen: this is a static copy of BaseCast, built for the hackathon, on data recorded on one
- * day. Closing it sets a cookie for a year; the sidebar's demo card keeps the same facts.
+ * Above every screen: this is a static copy of BaseCast, which won its track at the hackathon, on data recorded
+ * on one day. Closing it sets a cookie for a year; the sidebar's demo card keeps the same facts.
  */
 export function DemoBanner({ recordedOn }: { recordedOn: string }) {
   const [open, setOpen] = useState(true);
@@ -27,8 +27,16 @@ export function DemoBanner({ recordedOn }: { recordedOn: string }) {
         Static demo
       </span>
       <p className="min-w-0 flex-1 text-foreground">
-        Built for the {HACKATHON.name} ({HACKATHON.place}, {HACKATHON.dates}). This copy runs on a snapshot of its
-        data recorded on {recordedOn}; nothing on it updates.{" "}
+        <a
+          href={HACKATHON.showcase}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="font-medium text-basecast-brand hover:underline"
+        >
+          Winner of the {HACKATHON.track} track
+        </a>{" "}
+        at the {HACKATHON.name} ({HACKATHON.place}, {HACKATHON.dates}). This copy runs on a snapshot of its data
+        recorded on {recordedOn}; nothing on it updates.{" "}
         <a href="/how-its-built" className="inline-flex items-center gap-1 font-medium text-basecast-brand hover:underline">
           How it&apos;s built
           <ArrowRight className="size-3.5" aria-hidden />

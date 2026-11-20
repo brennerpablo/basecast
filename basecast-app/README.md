@@ -152,8 +152,8 @@ Node 22 or newer (`.nvmrc` pins 24, the version on Vercel). A push to `main` dep
 
 <div align="center">
 <sub>
-<a href="https://github.com/brennerpablo/basecast-airflow">basecast-airflow</a> ·
-<a href="https://github.com/brennerpablo/basecast-get-data">basecast-get-data</a> ·
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-airflow">basecast-airflow</a> ·
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-get-data">basecast-get-data</a> ·
 <b>basecast-app</b>
 </sub>
 </div>

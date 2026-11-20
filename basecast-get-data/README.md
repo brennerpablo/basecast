@@ -138,8 +138,8 @@ application default credentials.
 
 <div align="center">
 <sub>
-<a href="https://github.com/brennerpablo/basecast-airflow">basecast-airflow</a> ·
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-airflow">basecast-airflow</a> ·
 <b>basecast-get-data</b> ·
-<a href="https://github.com/brennerpablo/basecast-app">basecast-app</a>
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-app">basecast-app</a>
 </sub>
 </div>

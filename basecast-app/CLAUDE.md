@@ -283,7 +283,8 @@ Reference only: `~/Documents/repos/fundsys/fundsys-app` (the base) and `~/Docume
   two diagrams, 1024px and 760px), pixel-identical to the design at 1440px and wider;
   `product.html` at `/` for visitors, `internal.html` at `/how-its-built` for everyone, with the same header (logo, "Open the demo";
   sticky, turning to blurred glass on scroll through a CSS scroll-driven animation) and a floating toggle
-  between them (plain links and CSS, repeated in each file). Switching is a cross-document view transition
+  between them (plain links and CSS, repeated in each file). Each hero opens with the hackathon award pill (`.lp-award`, repeated in each file);
+  `product.html` also has the Loom demo after the hero and a contact card (LinkedIn, GitHub) before the footer. Switching is a cross-document view transition
   (`@view-transition`): header and toggle stay, the toggle's pill slides, the page slides the way of the click. The proxy rewrites to them (`LANDING_PAGES` in
   `src/lib/gate.ts`); the lake numbers in `internal.html` are fixed as of Sep 26, 2026.
 - The demo's shell: `DemoBanner` above every screen (built for the hackathon, the snapshot's recording date, a link to

@@ -1,6 +1,6 @@
 "use client";
 
-import { Camera, ExternalLink } from "lucide-react";
+import { Camera, ExternalLink, Trophy } from "lucide-react";
 
 import { ThemeMenu } from "@/components/theme/theme-menu";
 import {
@@ -36,8 +36,15 @@ export function DemoMenu({ recordedOn }: { recordedOn: string }) {
           <p className="text-xs text-muted-foreground">
             {HACKATHON.place} · {HACKATHON.dates}
           </p>
+          <p className="mt-1 text-xs font-medium text-basecast-brand">{HACKATHON.award}</p>
         </div>
         <DropdownMenuSeparator />
+        <DropdownMenuItem asChild className="cursor-pointer">
+          <a href={HACKATHON.showcase} target="_blank" rel="noopener noreferrer">
+            <Trophy />
+            Hackathon showcase
+          </a>
+        </DropdownMenuItem>
         <DropdownMenuItem asChild className="cursor-pointer">
           <a href="/how-its-built">
             <ExternalLink />

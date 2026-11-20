@@ -156,7 +156,7 @@ otherwise).
 <div align="center">
 <sub>
 <b>basecast-airflow</b> ·
-<a href="https://github.com/brennerpablo/basecast-get-data">basecast-get-data</a> ·
-<a href="https://github.com/brennerpablo/basecast-app">basecast-app</a>
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-get-data">basecast-get-data</a> ·
+<a href="https://github.com/brennerpablo/basecast/tree/main/basecast-app">basecast-app</a>
 </sub>
 </div>
