@@ -4,8 +4,8 @@
 **front B: the frontend**, a Next.js app built on the Fundsys app base and deployed to Vercel.
 
 **Since 2026-09-29 it is a static public demo.** To bring the GCP bill to zero, GCP project `basecast-509812` was
-deleted (the pipelines' VM, get-data, Cloud SQL, the lake's bucket, BigQuery; local backups in
-`~/Documents/repos/basecast/backups/2026-09-29/`). The app has no sign-in, no database and no environment: the BFF
+deleted (the pipelines' VM, get-data, Cloud SQL, the lake's bucket, BigQuery; the local backups made that day
+were deleted on 2026-11-06). The app has no sign-in, no database and no environment: the BFF
 answers from `snapshot/`, get-data's responses recorded once and committed (`src/lib/snapshot/`, details in
 `docs/operations.md`). Where the rules below speak of calling get-data, login or the ops log, read them as history.
 
@@ -22,7 +22,7 @@ their done criteria (B0–B4) stay only in `docs/KICKOFF.md` §5.
 - Anything not confirmed at the source stays marked "not verified".
 - Log decisions in `docs/decisions.md`, one line each: date, decision, reason. Decisions that affect more
   than one repo go to `basecast-get-data`, which owns the contract.
-- Work on `main` only, in all three repos: no feature branches, no worktrees. Small commits pushed straight
+- Work on `main` only, across the monorepo: no feature branches, no worktrees. Small commits pushed straight
   to `main`. A push to `main` deploys to production (Vercel for this repo), so typecheck, lint, test and
   build pass before every push.
 
@@ -31,7 +31,7 @@ their done criteria (B0–B4) stay only in `docs/KICKOFF.md` §5.
 This repo's dev server is the Runbar service `basecast-app` (a menu bar app; config in `~/.config/runbar/config.json`).
 Start it, stop it and read its output only through the `runbar` command, never with `npm run dev` (or `next dev`) straight in a
 terminal: the process would run outside Runbar, with no output in the app and fighting it for the port. The same
-goes for the sibling repos' services; builds, tests and scripts still run directly.
+goes for the sibling folders' services; builds, tests and scripts still run directly.
 
 - `runbar status`: what is up and on which port. If the service is already running, use it.
 - `runbar start basecast-app --wait`: starts it and waits for the port (opens Runbar if it is closed). The configured port

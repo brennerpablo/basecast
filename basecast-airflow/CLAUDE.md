@@ -8,8 +8,8 @@ large series) and runs both stages from thin Airflow DAGs on a GCP VM. Models co
 **Since 2026-09-29 the services are gone.** To bring the GCP bill to zero, project `basecast-509812` was deleted
 (Cloud Run, Cloud SQL, the Airflow VM, the lake's bucket, BigQuery) and the deploy workflows of this repo and its
 sibling are disabled, so a push to `main` no longer deploys. basecast-app is a static public demo that answers
-from a recorded snapshot of get-data. Local backups of the bucket and both databases are in
-`~/Documents/repos/basecast/backups/2026-09-29/` (see its README). Read what follows about GCP as history.
+from a recorded snapshot of get-data. The local backups of the bucket and both databases made
+that day were deleted on 2026-11-06; no other copy was found on the Mac. Read what follows about GCP as history.
 
 This file carries the stable parts of `docs/KICKOFF.md` (in Portuguese): sections 1, 2 and 7, this repo's
 part of section 3, the working rules from section 0 and the front A principles from section 4. The tasks
@@ -26,7 +26,7 @@ which order is in `docs/SCRAPING_RUNBOOK.md`.
   marked "not verified".
 - Log decisions in `docs/decisions.md`, one line each: date, decision, reason. Decisions that affect more
   than one repo go to `basecast-get-data`, which owns the contract.
-- Work on `main` only, in all three repos: no feature branches, no worktrees. Small commits pushed straight
+- Work on `main` only, across the monorepo: no feature branches, no worktrees. Small commits pushed straight
   to `main`. A push to `main` deploys to the Airflow VM (`.github/workflows/deploy.yml`), so the checks pass
   before every push: `uv run pytest`, plus `tests/test_dags.py` with Airflow installed.
 
