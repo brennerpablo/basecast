@@ -279,14 +279,15 @@ def fit_organic(frame: pl.DataFrame, feature: str, *, first: int | None = None,
 
 
 def organic_draws(fit: OrganicFit, years: Sequence[int], n: int, rng, *,
-                  resid_sd: float | None = None) -> "np.ndarray":
+                  resid_sd: float | Sequence[float] | None = None) -> "np.ndarray":
     """``n x len(years)`` draws with coefficients ~ MVN(beta, cov) (one per draw, so the trend's extrapolation
     error grows with the year).
 
     Without ``resid_sd``: weather resampled from the training summers (independently per year) plus a residual
     ~ N(0, sigma). With ``resid_sd``: weather at its training median and a residual ~ N(0, resid_sd), where
     ``resid_sd`` is an out-of-sample error SD that already carries weather and noise (the default of the script:
-    the one-year-ahead rolling-origin RMSE over pre-break summers)."""
+    the one-year-ahead rolling-origin RMSE over pre-break summers). A sequence gives one SD per year (X17: the
+    h-year-ahead RMSE for each year's horizon); a scalar keeps X7's draws exactly."""
     import numpy as np
 
     b = rng.multivariate_normal(np.asarray(fit.beta), np.asarray(fit.cov), size=n)
@@ -294,18 +295,26 @@ def organic_draws(fit: OrganicFit, years: Sequence[int], n: int, rng, *,
     if resid_sd is None:
         x = rng.choice(np.asarray(fit.x_train), size=(n, len(yrs)))
         eps = rng.normal(0.0, fit.sigma, size=(n, len(yrs)))
-    else:
+    elif np.ndim(resid_sd) == 0:
         x = np.full((n, len(yrs)), fit.x_p50)
         eps = rng.normal(0.0, resid_sd, size=(n, len(yrs)))
+    else:
+        sd = np.asarray(resid_sd, dtype=float)
+        if sd.shape != (len(yrs),):
+            raise ValueError("resid_sd needs one value per year")
+        x = np.full((n, len(yrs)), fit.x_p50)
+        eps = rng.normal(0.0, 1.0, size=(n, len(yrs))) * sd[None, :]
     return b[:, [0]] + b[:, [1]] * (yrs - 2014.0) + b[:, [2]] * x + eps
 
 
-def rolling_origin_errors(frame: pl.DataFrame, feature: str, first_test: int, last_test: int) -> pl.DataFrame:
-    """One-year-ahead errors of the organic model at median weather: fit on summers < Y, predict Y at the training
-    median of ``feature`` (a normal-weather forecast, like the official ones), for Y in [first_test, last_test]."""
+def rolling_origin_errors(frame: pl.DataFrame, feature: str, first_test: int, last_test: int, *,
+                          horizon: int = 1) -> pl.DataFrame:
+    """``horizon``-year-ahead errors of the organic model at median weather: fit on summers <= Y - horizon, predict Y
+    at the training median of ``feature`` (a normal-weather forecast, like the official ones), for Y in
+    [first_test, last_test]. The default (1) is X7's one-year-ahead errors."""
     rows = []
     for y in range(first_test, last_test + 1):
-        f = fit_organic(frame, feature, until=y - 1)
+        f = fit_organic(frame, feature, until=y - horizon)
         actual = frame.filter(pl.col("year") == y)["peak_mw"].item()
         pred = f.mean(y, f.x_p50)
         rows.append({"year": y, "actual_mw": actual, "predicted_mw": pred, "error_mw": pred - actual,
@@ -392,3 +401,176 @@ def official_asof(base: pl.DataFrame, as_of: date, *, products: Sequence[str] = 
                 first = later["vintage_date"].min()
                 out.append(later.filter(pl.col("vintage_date") == first).with_columns(pl.lit(True).alias("after_as_of")))
     return pl.concat(out) if out else base.head(0).with_columns(pl.lit(False).alias("after_as_of"))
+
+
+# --- X17: band calibration and zone allocation with uncertainty ------------------------------------------------
+# Additive: X7's functions above keep their defaults, so ``analysis/x7_peak_forecast.py`` reproduces X7.
+
+
+def horizon_rmse(frame: pl.DataFrame, feature: str, horizons: Iterable[int], *, last_test: int = PRE_BREAK_UNTIL,
+                 min_train: int = 8) -> pl.DataFrame:
+    """RMSE of the organic model's ``h``-year-ahead errors at median weather, per horizon, over targets up to
+    ``last_test`` (the pre-break summers by default, so the post-2020 step is not counted). Each target needs at
+    least ``min_train`` training summers, so longer horizons have fewer targets. Returns ``horizon``, ``n``,
+    ``rmse_mw``, ``bias_pct``, ``mape_pct``."""
+    import numpy as np
+
+    first_year = int(frame.drop_nulls(["peak_mw", feature])["year"].min())
+    rows = []
+    for h in horizons:
+        first_test = first_year + min_train - 1 + h
+        if first_test > last_test:
+            continue
+        e = rolling_origin_errors(frame, feature, first_test, last_test, horizon=h)
+        rows.append({"horizon": int(h), "n": e.height, "first_target": first_test,
+                     "rmse_mw": float(np.sqrt((e["error_mw"] ** 2).mean())),
+                     "bias_pct": float(e["error_pct"].mean()), "mape_pct": float(e["error_pct"].abs().mean())})
+    return pl.DataFrame(rows)
+
+
+def resid_sd_by_year(rmse: pl.DataFrame, horizons: Sequence[int]) -> list[float]:
+    """One residual SD per forecast year from :func:`horizon_rmse`; horizons past the table take its last row."""
+    table = dict(zip(rmse["horizon"].to_list(), rmse["rmse_mw"].to_list(), strict=True))
+    top = max(table)
+    return [float(table[min(max(int(h), 1), top)]) for h in horizons]
+
+
+def u_predictive(u_values: Sequence[float], *, sd_floor: float) -> tuple[float, float]:
+    """A continuous distribution for the unattributed layer instead of resampling its few past values: Normal with
+    the sample mean and SD ``s x sqrt(1 + 1/n)`` (the plug-in predictive for one new value), where ``s`` is the
+    sample SD (ddof 1), never below ``sd_floor`` (with a single value, ``s`` is the floor). Returns (mean, sd)."""
+    import numpy as np
+
+    u = np.asarray(u_values, dtype=float)
+    if u.size == 0:
+        return 0.0, 0.0
+    s = float(np.std(u, ddof=1)) if u.size > 1 else 0.0
+    s = max(s, sd_floor)
+    return float(u.mean()), s * float(np.sqrt(1 + 1 / u.size))
+
+
+def ratio_paths(base: float, vintage: date, promised: Mapping[int, float], ratios: Sequence[float], factor: float,
+                years: Sequence[int]) -> "np.ndarray":
+    """LL at the summer peak for each known ratio (``len(ratios) x len(years)``), rows sorted by ratio so a rank
+    picks a low or high path."""
+    import numpy as np
+
+    rs = sorted(float(r) for r in ratios)
+    return np.array([[factor * a2e_path(base, vintage, promised, r, years)[y] for y in years] for r in rs])
+
+
+def pace_paths(a2e_start: float, start_idx: float, paces_mw_yr: Sequence[float], factor: float,
+               years: Sequence[int]) -> "np.ndarray":
+    """LL at the summer peak if approvals keep a fixed pace (MW/yr) from ``a2e_start`` at month ``start_idx``, one
+    row per pace (sorted). X7's approvals-pace sanity check, with the pace resampled from past years."""
+    import numpy as np
+
+    ps = sorted(float(p) for p in paces_mw_yr)
+    return np.array([[factor * (a2e_start + p * (summer_index(y) - start_idx) / 12) for y in years] for p in ps])
+
+
+def _ranks_to_uniform(z: "np.ndarray") -> "np.ndarray":
+    import numpy as np
+
+    return (np.argsort(np.argsort(z)) + 0.5) / z.size
+
+
+def simulate_calibrated(
+    fit: OrganicFit, years: Sequence[int], *, ll_paths: "np.ndarray | None", u_values: Sequence[float] | None,
+    resid_sd: float | Sequence[float], u_mode: str = "normal", u_sd_floor: float = 0.0, rho_ll_u: float = 0.0,
+    n: int = 10_000, seed: int = 7,
+) -> dict[str, "np.ndarray"]:
+    """X17's simulation: X7's three layers with the band options that X7's review item 2 listed.
+
+    - ``resid_sd``: scalar (X7) or one SD per year (the h-year-ahead RMSE of :func:`horizon_rmse`).
+    - ``ll_paths``: candidate LL paths (:func:`ratio_paths` or :func:`pace_paths`); each draw takes one row.
+    - ``u_mode``: ``resample`` (X7: the past values), ``uniform`` (over their min-max) or ``normal``
+      (:func:`u_predictive`, floor ``u_sd_floor``). U is flat across years within a draw, as in X7.
+    - ``rho_ll_u``: rank correlation between the LL path and U through a Gaussian copula (0 = independent).
+    Returns the layers, their total and ``ll_rank`` (the uniform that picked the LL path)."""
+    import numpy as np
+
+    rng = np.random.default_rng(seed)
+    organic = organic_draws(fit, years, n, rng, resid_sd=resid_sd)
+    z1 = rng.standard_normal(n)
+    z2 = rho_ll_u * z1 + np.sqrt(max(1 - rho_ll_u ** 2, 0.0)) * rng.standard_normal(n)
+    u1, u2 = _ranks_to_uniform(z1), _ranks_to_uniform(z2)
+    if ll_paths is None or len(ll_paths) == 0:
+        large = np.zeros_like(organic)
+    else:
+        paths = np.asarray(ll_paths, dtype=float)
+        large = paths[np.minimum((u1 * len(paths)).astype(int), len(paths) - 1)]
+    if not u_values:
+        u = np.zeros(n)
+    else:
+        vals = np.sort(np.asarray(u_values, dtype=float))
+        if u_mode == "resample":
+            u = vals[np.minimum((u2 * vals.size).astype(int), vals.size - 1)]
+        elif u_mode == "uniform":
+            u = vals[0] + (vals[-1] - vals[0]) * u2
+        elif u_mode == "normal":
+            mu, sd = u_predictive(vals, sd_floor=u_sd_floor)
+            u = mu + sd * z2
+        else:
+            raise ValueError(f"unknown u_mode {u_mode!r}")
+    u = u[:, None] * np.ones((1, len(years)))
+    return {"organic": organic, "large_load": large, "unattributed": u, "total": organic + large + u,
+            "ll_rank": u1}
+
+
+def scale_band(arr: "np.ndarray", k: float) -> "np.ndarray":
+    """Stretch draws around each year's median by ``k`` (k > 1 widens every quantile band by the same factor)."""
+    import numpy as np
+
+    med = np.median(arr, axis=0, keepdims=True)
+    return med + k * (arr - med)
+
+
+def interval_score(lo: float, hi: float, actual: float, alpha: float = 0.2) -> float:
+    """Gneiting-Raftery interval score of a central (1 - alpha) interval: its width plus 2/alpha times the miss.
+    Lower is better; it rewards coverage and narrowness together (a proper score for the P10/P90 pair)."""
+    return (hi - lo) + (2 / alpha) * max(lo - actual, 0.0) + (2 / alpha) * max(actual - hi, 0.0)
+
+
+# --- zones: shares with uncertainty --------------------------------------------------------------------------
+
+
+def dirichlet_concentration(central: Mapping[str, float], candidates: Sequence[Mapping[str, float]],
+                            zones: Sequence[str]) -> float:
+    """Concentration ``c`` of a Dirichlet with mean ``central`` whose spread matches the candidate splits' mean
+    squared distance from it (method of moments: Var(s_z) = m_z (1 - m_z) / (c + 1), summed over zones)."""
+    m = [float(central.get(z, 0.0)) for z in zones]
+    msd = sum(sum((float(c.get(z, 0.0)) - m[i]) ** 2 for c in candidates) / len(candidates)
+              for i, z in enumerate(zones))
+    if msd <= 0:
+        return float("inf")
+    return max(sum(v * (1 - v) for v in m) / msd - 1, 1e-6)
+
+
+def share_draws(central: Mapping[str, float], concentration: float, n: int, rng,
+                zones: Sequence[str]) -> "np.ndarray":
+    """``n x len(zones)`` share vectors ~ Dirichlet(c x central); zones with a zero central share stay at 0 and an
+    infinite ``c`` returns the central split every time."""
+    import numpy as np
+
+    m = np.array([max(float(central.get(z, 0.0)), 0.0) for z in zones])
+    m = m / m.sum()
+    if not np.isfinite(concentration):
+        return np.tile(m, (n, 1))
+    out = np.zeros((n, len(zones)))
+    pos = m > 0
+    out[:, pos] = rng.dirichlet(concentration * m[pos], size=n)
+    return out
+
+
+def allocate_extra(large: "np.ndarray", u: "np.ndarray", stock_ll: float, stock_sh: "np.ndarray",
+                   inc_sh: "np.ndarray", u_sh: "np.ndarray") -> "np.ndarray":
+    """LL + U by zone (``n x years x zones``): LL up to ``stock_ll`` (factor x the deck's approved stock) follows the
+    stock split, LL above it the pipeline split, U the residual split (X11's three parts), each split drawn once per
+    simulation (rows of the ``n x zones`` share arrays). Zones add up to LL + U exactly in every draw."""
+    import numpy as np
+
+    stock = np.minimum(large, stock_ll)
+    inc = np.maximum(large - stock_ll, 0.0)
+    return (stock[:, :, None] * stock_sh[:, None, :] + inc[:, :, None] * inc_sh[:, None, :]
+            + u[:, :, None] * u_sh[:, None, :])

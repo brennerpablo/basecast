@@ -12,6 +12,11 @@ source reference. Events reach accounts two ways:
 - **by name**: an event names the account itself (an ERCOT registration, a city's own Ch. 380 agreement,
   the account's G&T in the TSP large-load RFI).
 
+Local development agreements split by what they fund (X22): a generation or storage project (NAICS 2211, else
+the recipient's name or the agreement's summary) fires ``dev_agreement_gen`` with the generation angle; any other
+project keeps ``dev_agreement`` and the load angle. ``tsp_large_load`` does not fire for an account whose only link
+to the RFI is a wholesale-supply link (:data:`SUPPLY_ONLY_LINKS`, X13); the account keeps the G&T fact.
+
 The score is the weighted mean of within-universe percentile ranks of ``config/account_score.yaml``
 (:func:`score_accounts`); the next action crosses the score tier with the active triggers
 (:func:`next_action`). Everything is pure functions on DataFrames (``tests/models/test_triggers.py``);
@@ -44,6 +49,9 @@ class TriggerSpec:
     offer: str  # the angle of the call
 
 
+# The generation angle, shared by the IA trigger and the generation development agreements.
+GENERATION_OFFER = "local capacity is being built by others; position distributed storage as the member-owned option"
+
 TRIGGERS: dict[str, TriggerSpec] = {
     "dc_permit": TriggerSpec(
         "New data-center air permit in the territory", "strong", "county",
@@ -51,11 +59,15 @@ TRIGGERS: dict[str, TriggerSpec] = {
     ),
     "gen_storage_ia": TriggerSpec(
         "Generation or storage project signed its interconnection agreement nearby", "strong", "county",
-        "local capacity is being built by others; position distributed storage as the member-owned option",
+        GENERATION_OFFER,
     ),
     "dev_agreement": TriggerSpec(
         "Local economic-development agreement (Ch. 312 / Ch. 380)", "strong", "county+name",
         "new commercial/industrial load coming; offer peak shaving before it lands",
+    ),
+    "dev_agreement_gen": TriggerSpec(
+        "Local tax abatement or incentive for a generation or storage project (Ch. 312 / Ch. 380)", "strong",
+        "county+name", GENERATION_OFFER,
     ),
     "market_registration": TriggerSpec(
         "Account registered a new ERCOT market role (LSE / QSE / TDSP / RE)", "strong", "name",
@@ -92,6 +104,10 @@ RFI_TSP_FOR_GT = {
 }
 # Accounts that report to the RFI as TSPs themselves (PUCT company name → the ``gt`` key above).
 SELF_TSP = {"CPS Energy": "CPS Energy"}
+# (PUCT supplier, account type) pairs where ``gt_cooperative`` is a wholesale-supply link only: the supplier's RFI
+# row is its transmission arm's (LCRA TSC), which says little about these accounts (PUCT lists LCRA as the supplier
+# of munis far from LCRA TSC's area, e.g. Sanger, Whitesboro; X13). They keep the G&T fact, not the trigger.
+SUPPLY_ONLY_LINKS = frozenset({("LCRA", "muni")})
 
 
 def self_tsp_rows(accounts: pl.DataFrame) -> pl.DataFrame:
@@ -218,10 +234,47 @@ def agreement_date() -> pl.Expr:
     )
 
 
+# Generation or storage projects among the development agreements. NAICS (Ch. 312 only, ~20% filled) decides
+# first; otherwise the recipient's name, the Ch. 380 summary, or (NAICS missing) the reinvestment zone's name, which
+# catches landowner recipients ("Oxbow Ranch" in "BNB Oxbow Solar Reinvestment Zone"). Manufacturers of generation
+# equipment (solar modules, wind towers, turbines) are load, not generation.
+GEN_NAICS_PREFIX = "2211"  # electric power generation, transmission and distribution
+GEN_NAME = r"(?i)\b(wind|solar|photovoltaic|bess)\b|energy storage|battery storage|storage system"
+GEN_SUMMARY = (
+    r"(?i)\b(solar|wind) (farm|project|energy (center|facility|project))|energy storage|battery storage|\bbess\b"
+    r"|generating (facility|station|plant)|power (plant|generation)"
+)
+NOT_GEN = r"(?i)manufactur|\bmodules?\b|\bsteel\b|\bturbines\b"
+
+
+def _text(df: pl.DataFrame, col: str) -> pl.Expr:
+    return pl.col(col).fill_null("") if col in df.columns else pl.lit("")
+
+
+def generation_basis(agreements: pl.DataFrame) -> pl.Expr:
+    """Why an agreement counts as a generation or storage project (``NAICS 221115``, ``recipient name``,
+    ``summary``, ``reinvestment zone``), or null for any other project. Columns it cannot find count as empty, so
+    frames without ``naics_code`` / ``summary`` / ``reinvestment_zone_name`` classify by name only."""
+    naics = pl.col("naics_code") if "naics_code" in agreements.columns else pl.lit(None, pl.Utf8)
+    name, summary, zone = (_text(agreements, c) for c in ("recipient_name", "summary", "reinvestment_zone_name"))
+    maker = name.str.contains(NOT_GEN) | summary.str.contains(NOT_GEN)
+    return (
+        pl.when(naics.fill_null("").str.starts_with(GEN_NAICS_PREFIX)).then(pl.format("NAICS {}", naics))
+        .when(maker).then(pl.lit(None, pl.Utf8))
+        .when(name.str.contains(GEN_NAME)).then(pl.lit("recipient name"))
+        .when(summary.str.contains(GEN_SUMMARY)).then(pl.lit("summary"))
+        .when(naics.is_null() & zone.str.contains(GEN_NAME)).then(pl.lit("reinvestment zone"))
+        .otherwise(pl.lit(None, pl.Utf8))
+    )
+
+
 def dev_agreement_events(agreements: pl.DataFrame, *, min_value: float = 1_000_000.0) -> pl.DataFrame:
     """Texas Comptroller Ch. 312 / Ch. 380 agreements (``cpa_local_dev_agreements``), one event per agreement
     and county. Ch. 380 needs ≥ ``min_value`` in total incentives; Ch. 312 abatements always pass (their
     ``total_incentive_value`` is mostly reported as 0). Cancelled agreements are dropped.
+
+    A generation or storage project (:func:`generation_basis`) is a ``dev_agreement_gen`` event, with the basis in
+    its detail; every other project is ``dev_agreement`` (new load).
 
     Mapping (see :func:`county_agreements`, :func:`city_agreement_accounts`): Ch. 312 and county-signed
     Ch. 380 go by county; city-signed Ch. 380 go by name to that city's muni only, because a city's deal
@@ -229,21 +282,25 @@ def dev_agreement_events(agreements: pl.DataFrame, *, min_value: float = 1_000_0
     """
     value_ok = (pl.col("program") == "ch312") | (pl.col("total_incentive_value") >= min_value)
     sel = agreements.filter(value_ok, pl.col("status").fill_null("") != "Cancelled").with_columns(
-        agreement_date().alias("event_date")
+        agreement_date().alias("event_date"), generation_basis(agreements).alias("_gen")
+    )
+    base_detail = pl.format(
+        "{} {} by {}, incentives ${}M",
+        pl.col("program"),
+        pl.col("status").fill_null(""),
+        pl.col("local_government_name").fill_null("?"),
+        (pl.col("total_incentive_value") / 1e6).round(1),
     )
     return _events(
         sel.select(
-            pl.lit("dev_agreement").alias("trigger"),
+            pl.when(pl.col("_gen").is_null()).then(pl.lit("dev_agreement")).otherwise(pl.lit("dev_agreement_gen"))
+            .alias("trigger"),
             "event_date",
             "county_fips",
             pl.coalesce("recipient_name", pl.lit("(recipient redacted)")).alias("title"),
-            pl.format(
-                "{} {} by {}, incentives ${}M",
-                pl.col("program"),
-                pl.col("status").fill_null(""),
-                pl.col("local_government_name").fill_null("?"),
-                (pl.col("total_incentive_value") / 1e6).round(1),
-            ).alias("detail"),
+            pl.when(pl.col("_gen").is_null()).then(base_detail)
+            .otherwise(pl.format("{}; generation or storage ({})", base_detail, pl.col("_gen")))
+            .alias("detail"),
             pl.lit("cpa_local_dev_agreements").alias("source"),
             pl.format("{}:{}", pl.col("program"), pl.col("agreement_id")).alias("source_ref"),
             "local_government_name",
@@ -457,12 +514,23 @@ def permit_surge_events(
     )
 
 
+def trigger_gt_links(gt: pl.DataFrame, *, supply_only: frozenset[tuple[str, str]] = SUPPLY_ONLY_LINKS) -> pl.DataFrame:
+    """The account × G&T links that may fire ``tsp_large_load``: ``gt`` rows (``account_id``, ``gt``,
+    ``account_type``) minus the wholesale-supply-only pairs (``supply_only``). A muni supplied by LCRA and by
+    another RFI TSP keeps the other link. Returns ``account_id``, ``gt``."""
+    drop = pl.lit(False)
+    for supplier, kind in supply_only:
+        drop = drop | ((pl.col("gt") == supplier) & (pl.col("account_type") == kind))
+    return gt.filter(~drop).select("account_id", "gt")
+
+
 def tsp_large_load_events(
     gt: pl.DataFrame, rfi: pl.DataFrame, *, target_year: int = 2030, min_mw: float = 1000.0
 ) -> pl.DataFrame:
     """Accounts whose G&T is a TSP in the RFI table with ≥ ``min_mw`` requested for ``target_year``.
 
-    ``gt``: ``account_id``, ``gt`` (one row per account and G&T). ``rfi``: the ``tsp`` breakdown of
+    ``gt``: ``account_id``, ``gt`` (one row per account and G&T), already cut to the links that may fire
+    (:func:`trigger_gt_links`, which :func:`load_gt` applies). ``rfi``: the ``tsp`` breakdown of
     ``puct_tsp_large_load_requests`` (``name``, ``year``, ``mw``, ``filed_date``); PPTX and PDF copies
     carry the same numbers, so the max per TSP and year is taken.
     """
@@ -653,7 +721,8 @@ def load_agreements() -> pl.DataFrame:
     return read_sql(
         """
         select program, agreement_id, status, local_government_type, local_government_name, county_fips,
-               recipient_name, executed_date, effective_date, total_incentive_value, naics_code
+               recipient_name, executed_date, effective_date, total_incentive_value, naics_code, summary,
+               reinvestment_zone_name
         from cpa_local_dev_agreements
         """
     )
@@ -685,17 +754,19 @@ def load_permits_monthly(since_year: int) -> pl.DataFrame:
     )
 
 
-def load_gt() -> pl.DataFrame:
-    """Account × G&T rows from ``puct_ccn_territories.gt_cooperative`` (``;``-separated)."""
+def load_gt(*, include_supply_only: bool = False) -> pl.DataFrame:
+    """Account × G&T rows from ``puct_ccn_territories.gt_cooperative`` (``;``-separated) that may fire
+    ``tsp_large_load`` (:func:`trigger_gt_links`); ``include_supply_only=True`` keeps every link."""
     df = read_sql(
         """
-        select ccn_no as account_id, gt_cooperative from puct_ccn_territories
+        select ccn_no as account_id, utility_type as account_type, gt_cooperative from puct_ccn_territories
         where utility_type in ('coop', 'muni') and in_ercot and gt_cooperative is not null
         """
     )
-    return df.with_columns(pl.col("gt_cooperative").str.split(";").alias("gt")).explode("gt").select(
-        "account_id", pl.col("gt").str.strip_chars()
+    links = df.with_columns(pl.col("gt_cooperative").str.split(";").alias("gt")).explode("gt").select(
+        "account_id", pl.col("gt").str.strip_chars(), "account_type"
     )
+    return links.select("account_id", "gt") if include_supply_only else trigger_gt_links(links)
 
 
 def load_rfi() -> pl.DataFrame:
