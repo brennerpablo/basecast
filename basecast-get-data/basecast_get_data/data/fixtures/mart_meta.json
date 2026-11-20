@@ -1,0 +1,284 @@
+{
+ "note": "Fixture: invented values, not a model output (scripts/make_contract_fixtures.py).",
+ "marts": {
+  "accounts": {
+   "signals": [
+    {
+     "signal": "pop_growth",
+     "label": "Population growth 2020→2025",
+     "unit": "share",
+     "weight": 0.2
+    },
+    {
+     "signal": "permits_per_1k",
+     "label": "Permits 2023–2025 per 1,000 residents",
+     "unit": "units/1k",
+     "weight": 0.15
+    },
+    {
+     "signal": "owner_sf_homes",
+     "label": "Owner-occupied single-family homes",
+     "unit": "homes",
+     "weight": 0.2
+    },
+    {
+     "signal": "dc_sites",
+     "label": "New data-center sites since 2025 (expected)",
+     "unit": "sites",
+     "weight": 0.15
+    },
+    {
+     "signal": "owner_sf_share",
+     "label": "Owner-occupied single-family share",
+     "unit": "share",
+     "weight": 0.1
+    },
+    {
+     "signal": "zone_peak_cagr",
+     "label": "Zone summer peak CAGR (LTLF)",
+     "unit": "per year",
+     "weight": 0.2
+    }
+   ]
+  },
+  "county_acquisition": {
+   "legend_breaks": [
+    0.2957,
+    0.3759,
+    0.4409,
+    0.5175
+   ],
+   "grid_tilt": 0.35,
+   "signals": [
+    {
+     "signal": "addr_sf_homes",
+     "label": "Owner-occupied single-family homes × addressable share",
+     "block": "market",
+     "unit": "homes",
+     "weight": 0.4
+    },
+    {
+     "signal": "pop_growth",
+     "label": "Population growth 2020→2025",
+     "block": "market",
+     "unit": "share",
+     "weight": 0.25
+    },
+    {
+     "signal": "permits_per_1k",
+     "label": "Permits 2023–2025 per 1,000 residents",
+     "block": "market",
+     "unit": "units/1k",
+     "weight": 0.15
+    },
+    {
+     "signal": "owner_sf_share",
+     "label": "Owner-occupied single-family share",
+     "block": "market",
+     "unit": "share",
+     "weight": 0.2
+    },
+    {
+     "signal": "zone_peak_cagr",
+     "label": "Weather-normalized zone summer peak CAGR",
+     "block": "grid",
+     "unit": "per year",
+     "weight": 0.3
+    },
+    {
+     "signal": "ll_pressure",
+     "label": "Zone summer-peak excess over the pre-2020 fit",
+     "block": "grid",
+     "unit": "share",
+     "weight": 0.25
+    },
+    {
+     "signal": "lz_spread",
+     "label": "Load-zone daily 2-hour price spread",
+     "block": "grid",
+     "unit": "USD/MWh",
+     "weight": 0.25
+    },
+    {
+     "signal": "dc_sites",
+     "label": "New data-center sites since 2025",
+     "block": "grid",
+     "unit": "sites",
+     "weight": 0.2
+    }
+   ]
+  },
+  "peak_forecast": {
+   "default_variant": "deck_pre_batch_zero",
+   "variants": [
+    {
+     "variant": "deck_pre_batch_zero",
+     "label": "Before Batch Zero",
+     "has_band": true
+    },
+    {
+     "variant": "deck_latest",
+     "label": "Latest deck",
+     "has_band": true
+    },
+    {
+     "variant": "approvals_pace",
+     "label": "Approvals pace",
+     "has_band": false
+    }
+   ],
+   "band_basis": {
+    "rolling_rmse": "Fixture: organic band from the one-year-ahead errors.",
+    "ratio_draws": "Fixture: large-load band from resampled realization ratios.",
+    "independent_layers": "Fixture: total band from the layers' draws.",
+    "allocation_variants": "Fixture: low/high across the candidate zone shares."
+   },
+   "ratio_definition": "Incremental realization ratio: approved MW added by December of the target year ÷ MW the deck promised beyond its own approved stock (horizons of 6 months or more)."
+  },
+  "glossary": {
+   "items": [
+    {
+     "kind": "next_action",
+     "code": "call_now",
+     "label": "Call now",
+     "text": "Top tiers with an active strong trigger (fixture wording).",
+     "strength": null
+    },
+    {
+     "kind": "next_action",
+     "code": "nurture",
+     "label": "Nurture",
+     "text": "An active strong trigger outside the top tiers (fixture wording).",
+     "strength": null
+    },
+    {
+     "kind": "next_action",
+     "code": "watch",
+     "label": "Watch",
+     "text": "Only context triggers are active (fixture wording).",
+     "strength": null
+    },
+    {
+     "kind": "next_action",
+     "code": "hold",
+     "label": "Hold",
+     "text": "No active trigger (fixture wording).",
+     "strength": null
+    },
+    {
+     "kind": "trigger",
+     "code": "dc_permit",
+     "label": "Data-center permit",
+     "text": "New data-center air permit in the territory",
+     "strength": "strong"
+    },
+    {
+     "kind": "trigger",
+     "code": "gen_storage_ia",
+     "label": "Gen/storage IA nearby",
+     "text": "Generation or storage project signed its interconnection agreement nearby",
+     "strength": "strong"
+    },
+    {
+     "kind": "trigger",
+     "code": "dev_agreement",
+     "label": "Dev agreement",
+     "text": "Local economic-development agreement (Ch. 312 / Ch. 380)",
+     "strength": "strong"
+    },
+    {
+     "kind": "trigger",
+     "code": "market_registration",
+     "label": "New ERCOT role",
+     "text": "Account registered a new ERCOT market role (LSE / QSE / TDSP / RE)",
+     "strength": "strong"
+    },
+    {
+     "kind": "trigger",
+     "code": "permit_surge",
+     "label": "Permit surge",
+     "text": "Residential permits up ≥ 25% (last 12 months vs the 12 before)",
+     "strength": "strong"
+    },
+    {
+     "kind": "trigger",
+     "code": "new_transmission",
+     "label": "New transmission",
+     "text": "New transmission project listed in ERCOT TPIT touching the territory",
+     "strength": "context"
+    },
+    {
+     "kind": "trigger",
+     "code": "rate_increase",
+     "label": "Rate increase",
+     "text": "Residential average price up ≥ 10% (EIA-861)",
+     "strength": "context"
+    },
+    {
+     "kind": "trigger",
+     "code": "tsp_large_load",
+     "label": "G&T large-load requests",
+     "text": "The account's G&T / TSP reported large-load requests (PUCT 58777 RFI)",
+     "strength": "context"
+    },
+    {
+     "kind": "flag",
+     "code": "no_exposed_county",
+     "label": "No exposed county",
+     "text": "Covers no county at 20% or more, so county triggers cannot fire.",
+     "strength": null
+    },
+    {
+     "kind": "flag",
+     "code": "apportionment_under",
+     "label": "Under-counted by area",
+     "text": "Area apportionment reads the territory smaller than its meters.",
+     "strength": null
+    },
+    {
+     "kind": "flag",
+     "code": "apportionment_over",
+     "label": "Over-counted by area",
+     "text": "Area apportionment reads the territory larger than its meters.",
+     "strength": null
+    },
+    {
+     "kind": "flag",
+     "code": "short_form",
+     "label": "EIA short form",
+     "text": "Files the EIA-861 short form: totals only, no residential price.",
+     "strength": null
+    },
+    {
+     "kind": "flag",
+     "code": "eia_break",
+     "label": "EIA series break",
+     "text": "The EIA customer series jumps between two years.",
+     "strength": null
+    }
+   ]
+  },
+  "load_normalized_monthly": {
+   "normal_period": "fixture normal years",
+   "weather_source": "fixture weather"
+  },
+  "four_cp_intervals": {
+   "window_start_local": "15:30",
+   "window_end_local": "17:30"
+  },
+  "peak_backtest": {
+   "eras": [
+    {
+     "era": "before_tsp_loads",
+     "label": "Before TSP large loads",
+     "description": "As-of dates before ERCOT's forecasts took in the TSPs' large loads."
+    },
+    {
+     "era": "with_tsp_loads",
+     "label": "With TSP large loads",
+     "description": "As-of dates after ERCOT's forecasts took in the TSPs' large loads."
+    }
+   ]
+  }
+ }
+}
