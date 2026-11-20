@@ -1,0 +1,108 @@
+"use client";
+
+import { keepPreviousData, useQuery } from "@tanstack/react-query";
+
+import type { components } from "@/lib/api/get-data";
+import { dataUrl, type Params } from "@/lib/bff/url";
+
+/** Types of the get-data contract, generated from its openapi.json (`npm run api:generate`). */
+export type Schemas = components["schemas"];
+export type SourceSummary = Schemas["SourceSummary"];
+export type SourcesData = Schemas["SourcesData"];
+export type LakeListing = Schemas["LakeListing"];
+export type LakeObject = Schemas["LakeObject"];
+export type ObjectDetail = Schemas["ObjectDetail"];
+export type RowsPage = Schemas["RowsPage"];
+export type GridColumnInfo = Schemas["GridColumn"];
+export type TableSummary = Schemas["TableSummary"];
+export type TableDetail = Schemas["TableDetail"];
+export type LineagePage = Schemas["LineagePage"];
+export type RunsPage = Schemas["RunsPage"];
+export type FileKind = LakeObject["kind"];
+
+/** An error from the BFF or get-data, with its `detail` as the message. */
+export class DataApiError extends Error {
+  constructor(
+    message: string,
+    readonly status: number,
+  ) {
+    super(message);
+  }
+}
+
+/** GET a get-data resource through the BFF and return its `data`. */
+export async function fetchData<T>(path: string, params?: Params, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(dataUrl(path, params), { signal });
+  const body = (await response.json().catch(() => null)) as { data?: T; detail?: unknown } | null;
+  if (!response.ok || !body || body.data === undefined) {
+    const detail = typeof body?.detail === "string" ? body.detail : `The data API answered ${response.status}.`;
+    throw new DataApiError(detail, response.status);
+  }
+  return body.data;
+}
+
+export const dataKeys = {
+  all: ["data"] as const,
+  sources: () => ["data", "sources"] as const,
+  list: (prefix: string, q: string, recursive: boolean) => ["data", "list", prefix, q, recursive] as const,
+  object: (key: string) => ["data", "object", key] as const,
+  tables: () => ["data", "tables"] as const,
+  table: (name: string) => ["data", "table", name] as const,
+  lineage: (name: string, offset: number) => ["data", "lineage", name, offset] as const,
+  runs: (source: string | null) => ["data", "runs", source] as const,
+};
+
+export function useLakeSources() {
+  return useQuery({
+    queryKey: dataKeys.sources(),
+    queryFn: ({ signal }) => fetchData<SourcesData>("lake/sources", undefined, signal),
+  });
+}
+
+export function useLakeList(prefix: string, { q = "", recursive = false, enabled = true } = {}) {
+  return useQuery({
+    queryKey: dataKeys.list(prefix, q, recursive),
+    queryFn: ({ signal }) =>
+      fetchData<LakeListing>("lake/list", { prefix, q, recursive: recursive || undefined, limit: 1000 }, signal),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useLakeObject(key: string) {
+  return useQuery({
+    queryKey: dataKeys.object(key),
+    queryFn: ({ signal }) => fetchData<ObjectDetail>("lake/object", { key }, signal),
+  });
+}
+
+export function useTables() {
+  return useQuery({
+    queryKey: dataKeys.tables(),
+    queryFn: ({ signal }) => fetchData<{ items: TableSummary[] }>("tables", undefined, signal),
+  });
+}
+
+export function useTable(name: string) {
+  return useQuery({
+    queryKey: dataKeys.table(name),
+    queryFn: ({ signal }) => fetchData<TableDetail>(`tables/${encodeURIComponent(name)}`, undefined, signal),
+  });
+}
+
+export function useLineage(name: string, offset: number, enabled = true) {
+  return useQuery({
+    queryKey: dataKeys.lineage(name, offset),
+    queryFn: ({ signal }) =>
+      fetchData<LineagePage>(`tables/${encodeURIComponent(name)}/lineage`, { offset, limit: 200 }, signal),
+    enabled,
+    placeholderData: keepPreviousData,
+  });
+}
+
+export function useRuns(source: string | null) {
+  return useQuery({
+    queryKey: dataKeys.runs(source),
+    queryFn: ({ signal }) => fetchData<RunsPage>("pipeline/runs", { source, limit: 1000 }, signal),
+  });
+}
