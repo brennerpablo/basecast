@@ -59,6 +59,7 @@ Data is the main track), non-obvious insight, usability, performance.
 
 - **Three repos, same design as Fundsys:** `basecast-airflow` (ingestion and models), `basecast-get-data`
   (API) and `basecast-app` (frontend). No monorepo.
+  *Superseded* on 2026-11-19: one monorepo, `basecast`, a folder per former repo (root `CLAUDE.md`).
 - **Now:** mining runs locally on the Mac mini (Apple Silicon). Later it moves to a personal GCP project
   in `us-central1` (the ERCOT API blocks access from outside the US) and a personal Vercel account.
 - **Lake:** immutable raw `raw/source=<id>/dt=<snapshot date>/<original file>` plus typed Parquet

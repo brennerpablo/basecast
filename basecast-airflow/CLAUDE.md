@@ -62,6 +62,7 @@ Data is the main track), non-obvious insight, usability, performance.
 
 - **Three repos, same design as Fundsys:** `basecast-airflow` (ingestion and models), `basecast-get-data`
   (API) and `basecast-app` (frontend). No monorepo.
+  *Superseded* on 2026-11-19: one monorepo, `basecast`, a folder per former repo (root `CLAUDE.md`).
 - **GCP project `basecast-509812`, `us-central1`** (the ERCOT API blocks access from outside the US):
   Airflow VM, Cloud SQL, the lake bucket and BigQuery; setup in `deploy/gcp/`. The Mac mini still runs
   backfills and dry runs against the same lake.
